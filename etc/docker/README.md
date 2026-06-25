@@ -22,6 +22,11 @@ The `docker-compose.yml` orchestrates a complete local devnet environment with b
 
 All services read configuration from `devnet-env` in this directory. The devnet stores chain data in `.devnet/` which is created on first run.
 
+The local devnet sets `BASE_NODE_SEQUENCER_SYNC_MODE=el`, so `base-builder` and the HA
+`base-sequencer-*` services complete sequencer startup from the execution layer's canonical head.
+Change that variable to `cl` in `devnet-env` to exercise the runtime default and legacy
+gossip-driven sequencer sync path.
+
 ## Usage
 
 The easiest way to interact with Docker is through the Justfile recipes:
