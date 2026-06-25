@@ -22,7 +22,7 @@ use super::{
 use crate::{
     DerivationActor, DerivationActorRequest, DerivationState, EngineActorRequest, EngineProcessor,
     EngineProcessorOptions, EngineRequestHandler, EngineRequestReceiver, NodeActor, NodeMode,
-    QueuedDerivationEngineClient, QueuedEngineDerivationClient,
+    QueuedDerivationEngineClient, QueuedEngineDerivationClient, SequencerSyncMode,
 };
 
 /// Live actor-system harness assembled by [`HarnessBuilder`].
@@ -263,6 +263,7 @@ impl HarnessBuilder {
                 unsafe_head_tx: None,
                 conductor: None,
                 sequencer_stopped: false,
+                sequencer_sync_mode: SequencerSyncMode::Cl,
             },
         );
         let engine_handle = tokio::spawn(async move {

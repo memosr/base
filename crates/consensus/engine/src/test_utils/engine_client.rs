@@ -56,6 +56,8 @@ pub struct MockEngineStorage {
     pub l2_blocks_by_label: HashMap<BlockNumberOrTag, L2RpcBlock>,
     /// Storage for block info responses by tag.
     pub block_info_by_tag: HashMap<BlockNumberOrTag, L2BlockInfo>,
+    /// Whether the EL is actively syncing.
+    pub el_syncing: bool,
 
     // Version-specific new_payload responses
     /// Storage for `new_payload_v2` responses.
@@ -171,6 +173,12 @@ impl MockEngineClientBuilder {
     /// Sets a block info response for a specific tag.
     pub fn with_block_info_by_tag(mut self, tag: BlockNumberOrTag, info: L2BlockInfo) -> Self {
         self.storage.block_info_by_tag.insert(tag, info);
+        self
+    }
+
+    /// Sets the `eth_syncing` response.
+    pub const fn with_el_syncing(mut self, syncing: bool) -> Self {
+        self.storage.el_syncing = syncing;
         self
     }
 
@@ -362,6 +370,11 @@ impl MockEngineClient {
     /// Sets a block info response for a specific tag.
     pub async fn set_block_info_by_tag(&self, tag: BlockNumberOrTag, info: L2BlockInfo) {
         self.storage.write().await.block_info_by_tag.insert(tag, info);
+    }
+
+    /// Sets the `eth_syncing` response.
+    pub async fn set_el_syncing(&self, syncing: bool) {
+        self.storage.write().await.el_syncing = syncing;
     }
 
     /// Sets the `new_payload_v2` response.
@@ -557,6 +570,10 @@ impl EngineClient for MockEngineClient {
     ) -> Result<Option<L2BlockInfo>, EngineClientError> {
         let storage = self.storage.read().await;
         Ok(storage.block_info_by_tag.get(&numtag).copied())
+    }
+
+    async fn el_syncing(&self) -> Result<bool, EngineClientError> {
+        Ok(self.storage.read().await.el_syncing)
     }
 }
 

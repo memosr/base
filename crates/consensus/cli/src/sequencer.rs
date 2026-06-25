@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use base_consensus_node::SequencerConfig;
+use base_consensus_node::{SequencerConfig, SequencerSyncMode};
 use clap::Parser;
 use url::Url;
 
@@ -44,6 +44,16 @@ pub struct SequencerArgs {
             .range(1..=SequencerConfig::MAX_SHADOW_BLOCKS_PER_CYCLE)
     )]
     pub shadow_blocks_per_cycle: Option<NonZeroU64>,
+
+    /// Source used to complete sequencer sync. `cl` preserves the existing gossip-driven
+    /// sequencer path; `el` lets the sequencer finish from the execution layer's canonical head.
+    #[arg(
+        id = "sequencer.sync-mode",
+        long = "sequencer.sync-mode",
+        default_value_t = SequencerSyncMode::default(),
+        env = "BASE_NODE_SEQUENCER_SYNC_MODE"
+    )]
+    pub sync_mode: SequencerSyncMode,
 
     /// Conductor service RPC endpoint. Providing this value enables the conductor service.
     #[arg(long = "conductor.rpc", env = "BASE_NODE_CONDUCTOR_RPC")]
@@ -84,6 +94,7 @@ impl SequencerArgs {
             sequencer_stopped: self.stopped,
             sequencer_recovery_mode: self.recover,
             shadow_blocks_per_cycle: self.shadow_blocks_per_cycle,
+            sequencer_sync_mode: self.sync_mode,
             conductor_rpc_url: self.conductor_rpc.clone(),
             conductor_binary_commit: self.conductor_binary_commit,
             conductor_rpc_timeout: self.conductor_rpc_timeout,
@@ -94,11 +105,9 @@ impl SequencerArgs {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU64;
-
     use clap::Parser;
 
-    use super::SequencerArgs;
+    use super::*;
 
     #[test]
     fn parses_shadow_blocks_per_cycle() {
@@ -141,5 +150,13 @@ mod tests {
             "301",
         ]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn sync_mode_parses_and_flows_to_config() {
+        let args = SequencerArgs::parse_from(["base", "--sequencer.sync-mode", "el"]);
+
+        assert_eq!(args.sync_mode, SequencerSyncMode::El);
+        assert_eq!(args.config().sequencer_sync_mode, SequencerSyncMode::El);
     }
 }

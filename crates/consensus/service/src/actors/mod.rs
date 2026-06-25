@@ -63,8 +63,8 @@ pub use sequencer::{
     L1OriginSelectorError, L1OriginSelectorProvider, OriginSelector, PayloadBuilder, PayloadSealer,
     PendingStopSender, PoolActivation, QueuedSequencerEngineClient, RecoveryModeGuard,
     ScheduledTicker, SealState, SealStepError, SealStepOutcome, SequencerActor,
-    SequencerActorError, SequencerAdminQuery, SequencerConfig, SequencerEngineClient, ShadowCycle,
-    ShadowReconciliationTask, UnsealedPayloadHandle,
+    SequencerActorError, SequencerAdminQuery, SequencerConfig, SequencerEngineClient,
+    SequencerSyncMode, ShadowCycle, ShadowReconciliationTask, UnsealedPayloadHandle,
 };
 #[cfg(test)]
 pub use sequencer::{MockConductor, MockOriginSelector, MockSequencerEngineClient};

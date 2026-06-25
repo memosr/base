@@ -243,10 +243,14 @@ impl RollupNode {
         unsafe_head_tx: watch::Sender<L2BlockInfo>,
         conductor: Option<Arc<dyn Conductor>>,
         checkpoint_client: CheckpointClient,
-    ) -> (EngineActor<EngineRequestHandler<E, QueuedEngineDerivationClient>>, EngineRpcProcessor<E>)
-    {
+    ) -> (
+        EngineActor<EngineRequestHandler<E, QueuedEngineDerivationClient>>,
+        EngineRpcProcessor<E>,
+        watch::Receiver<EngineState>,
+    ) {
         let engine_state = EngineState::default();
         let (engine_state_tx, engine_state_rx) = watch::channel(engine_state);
+        let sequencer_engine_state_rx = engine_state_rx.clone();
         let (engine_queue_length_tx, engine_queue_length_rx) = watch::channel(0);
         let engine = Engine::new(engine_state, engine_state_tx, engine_queue_length_tx);
 
@@ -267,6 +271,7 @@ impl RollupNode {
                 unsafe_head_tx: if mode.is_sequencer() { Some(unsafe_head_tx) } else { None },
                 conductor,
                 sequencer_stopped: self.sequencer_config.sequencer_stopped,
+                sequencer_sync_mode: self.sequencer_config.sequencer_sync_mode,
             },
             checkpoint_reader,
             checkpoint_writer,
@@ -282,7 +287,7 @@ impl RollupNode {
         let engine_handler = EngineRequestHandler::new(engine_processor, shadow_gate);
         let engine_actor = EngineActor::new(cancellation_token, engine_request_rx, engine_handler);
 
-        (engine_actor, engine_rpc_processor)
+        (engine_actor, engine_rpc_processor, sequencer_engine_state_rx)
     }
 
     /// Starts the rollup node service.
@@ -433,15 +438,16 @@ impl RollupNode {
         let engine_conductor: Option<Arc<dyn Conductor>> =
             conductor.clone().map(|c| Arc::new(c) as Arc<dyn Conductor>);
 
-        let (engine_actor, engine_rpc_processor) = self.create_engine_actor(
-            engine_client,
-            cancellation.clone(),
-            engine_actor_request_rx,
-            QueuedEngineDerivationClient::new(derivation_actor_request_tx.clone()),
-            unsafe_head_tx,
-            engine_conductor,
-            checkpoint_client,
-        );
+        let (engine_actor, engine_rpc_processor, sequencer_engine_state_rx) = self
+            .create_engine_actor(
+                engine_client,
+                cancellation.clone(),
+                engine_actor_request_rx,
+                QueuedEngineDerivationClient::new(derivation_actor_request_tx.clone()),
+                unsafe_head_tx,
+                engine_conductor,
+                checkpoint_client,
+            );
 
         // Select the concrete derivation actor implementation based on
         // RollupNode configuration.
@@ -552,6 +558,7 @@ impl RollupNode {
             let sequencer_engine_client = QueuedSequencerEngineClient {
                 engine_actor_request_tx: engine_actor_request_tx.clone(),
                 unsafe_head_rx,
+                engine_state_rx: sequencer_engine_state_rx,
             };
 
             // Create the admin API channel
