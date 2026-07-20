@@ -857,12 +857,12 @@ where
             };
 
             if !el_confirmed {
-                let seed_update = if self.sequencer_sync_mode.is_el() {
-                    EngineSyncStateUpdate { unsafe_head: Some(head), ..Default::default() }
-                } else {
-                    probe_update
-                };
-                self.engine.seed_state(seed_update);
+                // Only the EL-sync path reaches here (the `!is_el()` case returned above), so
+                // re-seed just the unsafe head and leave safe/finalized untouched.
+                self.engine.seed_state(EngineSyncStateUpdate {
+                    unsafe_head: Some(head),
+                    ..Default::default()
+                });
             }
 
             self.publish_unsafe_head();
@@ -932,7 +932,10 @@ where
             }
         };
 
-        let role = self.resolve_bootstrap_role().await;
+        // Handle the syncing-at-genesis case before resolving the role: during a prolonged
+        // snap-sync reth's head stays at genesis, so this arm fires every probe cycle and does
+        // not need `role`. Resolving the role here would issue a conductor RPC every cycle for
+        // the entire sync window.
         if head.block_info.hash == self.rollup.genesis.l2.hash && self.el_reports_syncing().await {
             self.engine.seed_state(EngineSyncStateUpdate {
                 unsafe_head: Some(head),
@@ -943,6 +946,7 @@ where
             return;
         }
 
+        let role = self.resolve_bootstrap_role().await;
         if head.block_info.hash == self.rollup.genesis.l2.hash
             && matches!(role, BootstrapRole::ConductorFollower)
         {
@@ -959,6 +963,10 @@ where
             return;
         }
 
+        // Any head that isn't caught by the two genesis guards above falls through to a forced
+        // probe. This includes the edge case of an active sequencer at genesis with the EL
+        // reporting not-syncing: the probe then FCUs with reth's own safe/finalized labels
+        // (also genesis for a genesis-only chain), which is the desired no-op.
         let probe_update = self.sequencer_el_sync_probe_update(role, head).await;
         let el_confirmed = match self
             .engine
