@@ -31,11 +31,12 @@ use crate::{
     DerivationActor, DerivationDelegateClient, DerivationError, EngineActor, EngineActorRequest,
     EngineConfig, EngineProcessor, EngineRequestReceiver, EngineRpcProcessor, L1OriginSelector,
     L1WatcherActor, L1WatcherQueryProcessor, NetworkActor, NetworkBuilder, NetworkConfig,
-    NodeActor, NodeMode, PayloadBuilder, QueuedDerivationEngineClient,
-    QueuedEngineDerivationClient, QueuedEngineRpcClient, QueuedL1WatcherDerivationClient,
-    QueuedNetworkEngineClient, QueuedSequencerAdminAPIClient, QueuedSequencerEngineClient,
-    RecoveryModeGuard, RpcActor, RpcContext, SequencerActor, SequencerConfig,
-    SequencerEngineRequestCoordinator, UpgradeSignalNodeConfig, ValidatorEngineRequestHandler,
+    NodeActor, NodeMode, PayloadBuilder, PrefetchedChainProvider, PreparedL1Origin,
+    QueuedDerivationEngineClient, QueuedEngineDerivationClient, QueuedEngineRpcClient,
+    QueuedL1WatcherDerivationClient, QueuedNetworkEngineClient, QueuedSequencerAdminAPIClient,
+    QueuedSequencerEngineClient, RecoveryModeGuard, RpcActor, RpcContext, SequencerActor,
+    SequencerConfig, SequencerEngineRequestCoordinator, UpgradeSignalNodeConfig,
+    ValidatorEngineRequestHandler,
     actors::{BlockStream, NetworkInboundData, QueuedUnsafePayloadGossipClient},
 };
 
@@ -202,14 +203,26 @@ impl RollupNode {
         self.rpc_builder.clone()
     }
 
-    /// Returns the sequencer builder for the node.
+    /// Returns the timeout for a sequencer L1 fallback lookup.
+    fn fallback_l1_timeout(&self) -> Duration {
+        let quarter_slot_ms = self.config.block_time.saturating_mul(1000) / 4;
+        Duration::from_millis(quarter_slot_ms.clamp(100, 500))
+    }
+
+    /// Returns the sequencer attributes builder for the node.
     fn create_attributes_builder(
         &self,
-    ) -> StatefulAttributesBuilder<AlloyChainProvider, AlloyL2ChainProvider> {
-        let l1_derivation_provider = AlloyChainProvider::new_with_trust(
+        origin_rx: watch::Receiver<Option<PreparedL1Origin>>,
+    ) -> StatefulAttributesBuilder<PrefetchedChainProvider, AlloyL2ChainProvider> {
+        let l1_fallback_provider = AlloyChainProvider::new_with_trust(
             self.l1_config.engine_provider.clone(),
             DERIVATION_PROVIDER_CACHE_SIZE,
             self.l1_config.trust_rpc,
+        );
+        let l1_derivation_provider = PrefetchedChainProvider::new(
+            origin_rx,
+            l1_fallback_provider,
+            self.fallback_l1_timeout(),
         );
         let l2_derivation_provider = AlloyL2ChainProvider::new_with_trust(
             self.l2_provider.clone(),
@@ -524,14 +537,6 @@ impl RollupNode {
         .map_err(|e| format!("Failed to start network actor: {e}"))?;
 
         let (l1_head_updates_tx, l1_head_updates_rx) = watch::channel(None);
-        let delayed_l1_provider = DelayedL1OriginSelectorProvider::new(
-            self.l1_config.engine_provider.clone(),
-            l1_head_updates_rx,
-            self.sequencer_config.l1_conf_delay,
-        );
-
-        let delayed_origin_selector =
-            L1OriginSelector::new(Arc::clone(&self.config), delayed_l1_provider);
 
         // Create the L1 Watcher actor
 
@@ -580,6 +585,15 @@ impl RollupNode {
         let node_mode = self.mode();
         // Create the sequencer if needed
         let (sequencer_actor, sequencer_admin_client) = if node_mode.is_sequencer() {
+            let delayed_l1_provider = DelayedL1OriginSelectorProvider::new(
+                self.l1_config.engine_provider.clone(),
+                l1_head_updates_rx,
+                self.sequencer_config.l1_conf_delay,
+            );
+            let delayed_origin_selector =
+                L1OriginSelector::new(Arc::clone(&self.config), delayed_l1_provider);
+            let attributes_builder =
+                self.create_attributes_builder(delayed_origin_selector.subscribe());
             let sequencer_engine_client = QueuedSequencerEngineClient {
                 engine_actor_request_tx: engine_actor_request_tx.clone(),
                 unsafe_head_rx,
@@ -598,7 +612,7 @@ impl RollupNode {
                 Some(SequencerActor {
                     admin_api_rx: sequencer_admin_api_rx,
                     builder: PayloadBuilder {
-                        attributes_builder: self.create_attributes_builder(),
+                        attributes_builder,
                         engine_client: Arc::clone(&engine_client),
                         origin_selector: delayed_origin_selector,
                         recovery_mode: recovery_mode.clone(),

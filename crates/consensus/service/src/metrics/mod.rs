@@ -52,8 +52,14 @@ base_metrics::define_metrics! {
     #[describe("Empty blocks produced due to sequencer drift threshold")]
     sequencer_drift_empty_blocks_total: counter,
     #[describe("L1 origin lookups that exceeded the selector deadline, by lookup kind")]
-    #[label(name = "kind", default = ["by_hash", "by_number"])]
+    #[label(name = "kind", default = ["by_hash", "by_number", "receipts"])]
     sequencer_l1_origin_fetch_timeouts_total: counter,
+    #[describe("L1 origin lookups served from the selected-origin slot")]
+    #[label(name = "kind", default = ["header", "receipts"])]
+    sequencer_l1_origin_buffer_hits_total: counter,
+    #[describe("L1 origin lookups that missed the selected-origin slot")]
+    #[label(name = "kind", default = ["header", "receipts"])]
+    sequencer_l1_origin_buffer_misses_total: counter,
     #[describe("Pre-built payloads discarded because the unsafe head advanced past their parent")]
     sequencer_stale_build_discarded_total: counter,
     #[describe("Configured verifier L1 confirmation depth")]
